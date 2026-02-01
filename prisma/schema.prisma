@@ -1,0 +1,330 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  STUDENT
+  ADMIN
+}
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  ADDITIONAL_INFO
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+enum ApplicationReason {
+  LOW_INCOME
+  MEDICAL
+  EMERGENCY
+  ORPHAN
+  DISABILITY
+  LARGE_FAMILY
+  SINGLE_PARENT
+  ACADEMIC_EXCELLENCE
+  OTHER
+}
+
+enum ApplicationHistoryAction {
+  CREATED
+  SUBMITTED
+  STATUS_CHANGED
+  DOCUMENT_UPLOADED
+  COMMENT_ADDED
+  REVIEWED
+  APPROVED
+  REJECTED
+}
+
+enum ChatConversationStatus {
+  ACTIVE
+  CLOSED
+}
+
+// ============================================
+// MODELS
+// ============================================
+
+model User {
+  id              String    @id @default(uuid())
+  
+  // Authentication
+  studentId       String?   @unique
+  email           String    @unique
+  phone           String?
+  
+  // Personal Information
+  firstName       String
+  lastName        String
+  middleName      String?
+  
+  // Academic Information
+  faculty         String
+  department      String
+  course          Int
+  group           String?
+  
+  // Role
+  role            UserRole  @default(STUDENT)
+  
+  // Status
+  isActive        Boolean   @default(true)
+  
+  // Timestamps
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastLoginAt     DateTime?
+  
+  // Relations
+  applications           Application[]        @relation("UserApplications")
+  reviewedApplications   Application[]        @relation("ReviewedApplications")
+  applicationHistory     ApplicationHistory[]
+  sentMessages           ChatMessage[]        @relation("SenderMessages")
+  studentConversations   ChatConversation[]   @relation("StudentConversations")
+  adminConversations     ChatConversation[]   @relation("AdminConversations")
+  news                   News[]
+  
+  @@index([email])
+  @@index([studentId])
+  @@index([role])
+  @@map("users")
+}
+
+model Application {
+  id                    String              @id @default(uuid())
+  
+  // Application Number
+  applicationNumber     String              @unique
+  
+  // User
+  userId                String
+  user                  User                @relation("UserApplications", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Status
+  status                ApplicationStatus   @default(DRAFT)
+  
+  // Application Details
+  reason                ApplicationReason
+  description           String              @db.Text
+  amount                Decimal             @db.Decimal(10, 2)
+  
+  // Form Data
+  formData              Json?
+  
+  // PDF
+  pdfUrl                String?
+  
+  // Review
+  reviewedBy            String?
+  reviewer              User?               @relation("ReviewedApplications", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewedAt            DateTime?
+  reviewComment         String?             @db.Text
+  
+  // Approval
+  approvedAmount        Decimal?            @db.Decimal(10, 2)
+  
+  // Timestamps
+  submittedAt           DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  // Relations
+  documents             ApplicationDocument[]
+  history               ApplicationHistory[]
+  
+  @@index([userId])
+  @@index([status])
+  @@index([applicationNumber])
+  @@index([submittedAt])
+  @@index([createdAt])
+  @@map("applications")
+}
+
+model ApplicationDocument {
+  id              String      @id @default(uuid())
+  
+  // Application
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  
+  // File Info
+  fileName        String
+  fileUrl         String
+  fileType        String
+  fileSize        Int
+  
+  // Metadata
+  uploadedAt      DateTime    @default(now())
+  
+  @@index([applicationId])
+  @@map("application_documents")
+}
+
+model ApplicationHistory {
+  id              String                    @id @default(uuid())
+  
+  // Application
+  applicationId   String
+  application     Application               @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  
+  // User
+  userId          String
+  user            User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Action
+  action          ApplicationHistoryAction
+  
+  // Details
+  comment         String?                   @db.Text
+  metadata        Json?
+  
+  // Timestamp
+  createdAt       DateTime                  @default(now())
+  
+  @@index([applicationId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("application_history")
+}
+
+model ChatConversation {
+  id              String                  @id @default(uuid())
+  
+  // Participants
+  studentId       String
+  student         User                    @relation("StudentConversations", fields: [studentId], references: [id], onDelete: Cascade)
+  
+  adminId         String?
+  admin           User?                   @relation("AdminConversations", fields: [adminId], references: [id], onDelete: SetNull)
+  
+  // Status
+  status          ChatConversationStatus  @default(ACTIVE)
+  
+  // Metadata
+  lastMessageAt   DateTime?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  
+  // Relations
+  messages        ChatMessage[]
+  
+  @@index([studentId])
+  @@index([adminId])
+  @@index([status])
+  @@index([lastMessageAt])
+  @@map("chat_conversations")
+}
+
+model ChatMessage {
+  id              String           @id @default(uuid())
+  
+  // Conversation
+  conversationId  String
+  conversation    ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  // Sender
+  senderId        String
+  sender          User             @relation("SenderMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  
+  // Message
+  content         String           @db.Text
+  attachments     Json?
+  
+  // Status
+  isRead          Boolean          @default(false)
+  
+  // Timestamp
+  createdAt       DateTime         @default(now())
+  
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@map("chat_messages")
+}
+
+model News {
+  id              String   @id @default(uuid())
+  
+  // Content
+  title           String
+  content         String   @db.Text
+  imageUrl        String?
+  
+  // Publishing
+  isPublished     Boolean  @default(false)
+  publishedAt     DateTime?
+  
+  // Author
+  authorId        String
+  author          User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([isPublished])
+  @@index([publishedAt])
+  @@index([authorId])
+  @@map("news")
+}
+
+model FAQ {
+  id              String   @id @default(uuid())
+  
+  // Content
+  question        String
+  answer          String   @db.Text
+  
+  // Ordering
+  order           Int      @default(0)
+  
+  // Publishing
+  isPublished     Boolean  @default(true)
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([order])
+  @@index([isPublished])
+  @@map("faq")
+}
+
+model OTPCode {
+  id              String   @id @default(uuid())
+  
+  // Identifier
+  identifier      String
+  
+  // Code
+  code            String
+  
+  // Attempts
+  attempts        Int      @default(0)
+  
+  // Expiry
+  expiresAt       DateTime
+  
+  // Timestamp
+  createdAt       DateTime @default(now())
+  
+  @@index([identifier, code])
+  @@index([expiresAt])
+  @@map("otp_codes")
+}
